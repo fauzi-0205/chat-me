@@ -401,28 +401,24 @@ onMounted(() => {
 
 <template>
   <div class="h-full w-full p-4 md:p-6 flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-900 dark:to-slate-800 transition-colors duration-300">
-    <div class="flex h-full w-full max-w-7xl mx-auto bg-white/70 dark:bg-black/40 backdrop-blur-xl rounded-[2rem] shadow-2xl overflow-hidden border border-white/30 dark:border-white/10 transition-colors duration-300">
+    <div class="flex flex-col md:flex-row h-full w-full max-w-7xl mx-auto bg-white/70 dark:bg-black/40 backdrop-blur-xl rounded-[2rem] shadow-2xl overflow-hidden border border-white/30 dark:border-white/10 transition-colors duration-300">
       
       <!-- PANEL 1: Navigasi Paling Kiri -->
-      <div class="w-[60px] flex-shrink-0 bg-white/60 dark:bg-black/30 backdrop-blur-md border-r border-white/20 dark:border-white/10 flex flex-col items-center py-4 z-20 transition-colors duration-300">
-        <div class="flex flex-col gap-6 w-full items-center">
-          <button class="p-2 bg-white/40 dark:bg-white/10 backdrop-blur-sm rounded-full text-slate-700 dark:text-slate-200 shadow-sm">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"></path></svg>
-          </button>
-        </div>
+      <div class="flex flex-row md:flex-col items-center justify-between md:justify-start w-full h-[60px] md:h-full md:w-[60px] flex-shrink-0 bg-white/60 dark:bg-black/30 backdrop-blur-md border-b md:border-b-0 md:border-r border-white/20 dark:border-white/10 px-4 py-2 md:py-4 z-20 transition-colors duration-300">
+        <button class="p-2 bg-white/40 dark:bg-white/10 backdrop-blur-sm rounded-full text-slate-700 dark:text-slate-200 shadow-sm order-1">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"></path></svg>
+        </button>
 
-        <div class="mt-auto flex flex-col gap-6 w-full items-center">
+        <div class="flex flex-row md:flex-col items-center gap-6 order-2 md:order-3 md:mt-auto">
           <!-- Toggle Tema -->
           <button @click="toggleTheme" class="p-2 text-[#54656f] dark:text-[#aebac1] hover:bg-white/30 dark:hover:bg-white/10 rounded-full transition-colors" title="Ganti Tema">
             <svg v-if="isDark" xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="4.22" x2="19.78" y2="5.64"></line></svg>
             <svg v-else xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
           </button>
-
           <!-- Logout -->
           <button @click="handleLogout" class="p-2 text-[#54656f] dark:text-[#aebac1] hover:bg-white/30 dark:hover:bg-white/10 rounded-full transition-colors" title="Keluar">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
           </button>
-
           <!-- Profil Avatar Kiri -->
           <div @click="openProfileModal" class="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold cursor-pointer shadow-sm overflow-hidden bg-blue-600 hover:ring-2 hover:ring-blue-400 transition-all">
             <img v-if="authStore.user?.photoURL" :src="authStore.user.photoURL" alt="Profile" class="w-full h-full object-cover" />
@@ -432,7 +428,7 @@ onMounted(() => {
       </div>
 
       <!-- PANEL 2: Sidebar Daftar Kontak -->
-      <div class="w-full md:w-[350px] bg-white/50 dark:bg-black/30 backdrop-blur-md flex flex-col border-r border-white/20 dark:border-white/10 transition-colors duration-300">
+      <div class="w-full md:w-[350px] flex-shrink-0 bg-white/50 dark:bg-black/30 backdrop-blur-md flex flex-col border-r border-white/20 dark:border-white/10 transition-colors duration-300" :class="{'hidden md:flex': selectedChat, 'flex': !selectedChat}">
         <div class="h-[60px] px-4 flex items-center justify-between backdrop-blur-sm bg-white/70 dark:bg-white/10 border-b border-white/20 dark:border-white/10">
           <h2 class="font-bold text-xl">Chat</h2>
           <button @click="showAddModal = true" class="p-2 hover:bg-white/30 dark:hover:bg-white/10 rounded-full transition-colors">
@@ -496,6 +492,10 @@ onMounted(() => {
 
         <template v-else>
           <div class="h-[60px] px-4 flex items-center bg-white/70 dark:bg-white/10 backdrop-blur-md border-b border-white/20 dark:border-white/10 z-10">
+             <!-- Tombol kembali (hanya mobile) -->
+             <button @click="selectedChat = null" class="md:hidden mr-2 p-2 -ml-2 hover:bg-white/30 rounded-full text-slate-600 dark:text-slate-300">
+               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+             </button>
              <div class="w-10 h-10 rounded-full overflow-hidden bg-blue-500 flex-shrink-0">
                <img v-if="selectedChat.photoURL" :src="selectedChat.photoURL" class="w-full h-full object-cover" />
                <span v-else class="flex h-full w-full items-center justify-center text-white font-bold">{{ selectedChat.displayName?.charAt(0) }}</span>
@@ -536,7 +536,7 @@ onMounted(() => {
           </div>
 
           <!-- Floating Input Area -->
-          <div class="relative mx-auto max-w-2xl w-full px-4 mt-2 mb-3">
+          <div class="relative mx-auto w-full max-w-2xl px-2 md:px-4 mt-2 mb-3 md:mb-4">
             
             <!-- PREVIEW GAMBAR SEBELUM KIRIM -->
             <div v-if="imagePreviewUrl" class="absolute bottom-full left-0 mb-2 p-3 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md shadow-lg rounded-xl border border-white/30 dark:border-white/10 ml-4">
@@ -585,7 +585,7 @@ onMounted(() => {
 
       <!-- Modal Tambah Kontak -->
       <div v-if="showAddModal" class="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm transition-opacity">
-        <div class="bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg w-full max-w-md rounded-2xl shadow-2xl p-6 border border-white/30 dark:border-white/10">
+        <div class="bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg w-full max-w-md rounded-2xl shadow-2xl p-6 border border-white/30 dark:border-white/10 mx-4 sm:mx-0">
           <div class="flex justify-between items-center mb-6">
             <h3 class="text-xl font-bold text-[#111b21] dark:text-[#e9edef]">Hubungkan Kontak</h3>
             <button @click="showAddModal = false" class="text-[#54656f] dark:text-[#8696a0] hover:text-red-500 transition-colors">
@@ -617,7 +617,7 @@ onMounted(() => {
 
       <!-- MODAL EDIT PROFIL -->
       <div v-if="showProfileModal" class="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm transition-opacity">
-        <div class="bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg w-full max-w-sm rounded-2xl shadow-2xl p-6 border border-white/30 dark:border-white/10">
+        <div class="bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg w-full max-w-sm rounded-2xl shadow-2xl p-6 border border-white/30 dark:border-white/10 mx-4 sm:mx-0">
           
           <div class="flex justify-between items-center mb-6">
             <h3 class="text-xl font-bold text-[#111b21] dark:text-[#e9edef]">Profil Saya</h3>
