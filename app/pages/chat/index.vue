@@ -393,15 +393,15 @@ onMounted(() => {
         stories.value = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
       })
     } else {
-      navigateTo('/login')
+      navigateTo('/index')
     }
   })
 })
 </script>
 
 <template>
-  <div class="h-full w-full p-4 md:p-6 flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-900 dark:to-slate-800 transition-colors duration-300">
-    <div class="flex flex-col md:flex-row h-full w-full max-w-7xl mx-auto bg-white/70 dark:bg-black/40 backdrop-blur-xl rounded-[2rem] shadow-2xl overflow-hidden border border-white/30 dark:border-white/10 transition-colors duration-300">
+  <div class="h-dvh w-full p-4 md:p-6 flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-900 dark:to-slate-800 transition-colors duration-300">
+    <div class="flex flex-col md:flex-row h-full w-full max-w-7xl mx-auto bg-white/70 dark:bg-black/40 backdrop-blur-xl rounded-[2rem] shadow-2xl overflow-hidden border border-white/30 dark:border-white/10 transition-colors duration-300 pb-safe">
       
       <!-- PANEL 1: Navigasi Paling Kiri -->
       <div class="flex flex-row md:flex-col items-center justify-between md:justify-start w-full h-[60px] md:h-full md:w-[60px] flex-shrink-0 bg-white/60 dark:bg-black/30 backdrop-blur-md border-b md:border-b-0 md:border-r border-white/20 dark:border-white/10 px-4 py-2 md:py-4 z-20 transition-colors duration-300">
@@ -535,49 +535,51 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- Floating Input Area -->
-          <div class="relative mx-auto w-full max-w-2xl px-2 md:px-4 mt-2 mb-3 md:mb-4">
-            
-            <!-- PREVIEW GAMBAR SEBELUM KIRIM -->
-            <div v-if="imagePreviewUrl" class="absolute bottom-full left-0 mb-2 p-3 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md shadow-lg rounded-xl border border-white/30 dark:border-white/10 ml-4">
-               <div class="relative">
-                  <img :src="imagePreviewUrl" class="h-32 object-contain rounded-lg" />
-                  <button @click="cancelImage" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg></button>
-               </div>
-               <p class="text-xs text-center mt-2 text-slate-500">Tambahkan teks lalu tekan Enter</p>
-            </div>
-
-            <!-- KOTAK REPLY -->
-            <div v-if="replyingTo" class="mb-2 p-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md border-l-4 border-blue-500 flex justify-between rounded-t-lg">
-               <div class="text-xs truncate"><p class="font-bold text-blue-500">Balas {{ replyingTo.senderId === authStore.user.uid ? 'Anda' : selectedChat.displayName }}</p><p class="truncate">{{ replyingTo.text || '📷 Gambar' }}</p></div>
-               <button @click="replyingTo = null"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg></button>
-            </div>
-            
-            <!-- BARIS INPUT PIL (Floating Pill) -->
-            <div class="flex items-center gap-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md rounded-full shadow-xl border border-white/30 dark:border-white/10 p-1 pl-4">
-              <label class="cursor-pointer text-slate-500 hover:text-blue-500">
-                <input type="file" accept="image/*" class="hidden" @change="handleImageSelect" />
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-              </label>
-              <input v-model="newMessage" @keyup.enter="sendMessage()" type="text" placeholder="Ketik pesan..." class="flex-1 bg-transparent px-2 py-2 outline-none text-sm placeholder-slate-400 dark:placeholder-gray-500" />
-              <!-- Tombol Kirim / Mic -->
-              <button v-if="newMessage.trim() || imagePreviewUrl" @click="sendMessage()" class="text-blue-500 p-2 hover:bg-white/30 dark:hover:bg-white/10 rounded-full transition-colors">
-                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
-              </button>
+          <!-- ====== INPUT AREA STICKY (TIDAK TERGULUNG) ====== -->
+          <div class="sticky bottom-0 z-10 w-full bg-white/40 dark:bg-black/30 backdrop-blur-md border-t border-white/10 dark:border-white/10 pb-safe">
+            <div class="mx-auto max-w-2xl px-3 md:px-4 pt-2 pb-3">
               
-              <button v-else 
-                @mousedown="startRecording" 
-                @mouseup="stopRecording" 
-                @mouseleave="stopRecording" 
-                @touchstart="startRecording" 
-                @touchend="stopRecording"
-                class="p-2 transition-colors rounded-full" 
-                :class="isRecording ? 'text-red-500 animate-pulse bg-red-100 dark:bg-red-900/30' : 'text-slate-500 hover:bg-white/30 dark:hover:bg-white/10'">
-                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-                </svg>
-              </button>
+              <!-- Preview Gambar -->
+              <div v-if="imagePreviewUrl" class="absolute bottom-full left-0 mb-2 p-3 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md shadow-lg rounded-xl border border-white/30 dark:border-white/10 ml-4">
+                 <div class="relative">
+                    <img :src="imagePreviewUrl" class="h-32 object-contain rounded-lg" />
+                    <button @click="cancelImage" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg></button>
+                 </div>
+                 <p class="text-xs text-center mt-2 text-slate-500">Tambahkan teks lalu tekan Enter</p>
+              </div>
+
+              <!-- Kotak Reply -->
+              <div v-if="replyingTo" class="mb-2 p-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md border-l-4 border-blue-500 flex justify-between rounded-t-lg">
+                 <div class="text-xs truncate"><p class="font-bold text-blue-500">Balas {{ replyingTo.senderId === authStore.user.uid ? 'Anda' : selectedChat.displayName }}</p><p class="truncate">{{ replyingTo.text || '📷 Gambar' }}</p></div>
+                 <button @click="replyingTo = null"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg></button>
+              </div>
+              
+              <!-- Pill Input -->
+              <div class="flex items-center gap-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md rounded-full shadow-xl border border-white/30 dark:border-white/10 p-1 pl-4">
+                <label class="cursor-pointer text-slate-500 hover:text-blue-500 flex-shrink-0">
+                  <input type="file" accept="image/*" class="hidden" @change="handleImageSelect" />
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                </label>
+                <input v-model="newMessage" @keyup.enter="sendMessage()" type="text" placeholder="Ketik pesan..." class="flex-1 bg-transparent px-2 py-2.5 outline-none text-sm placeholder-slate-400 dark:placeholder-gray-500 min-w-0" />
+                <!-- Tombol Kirim atau Mic -->
+                <button v-if="newMessage.trim() || imagePreviewUrl" @click="sendMessage()" class="text-blue-500 p-2 hover:bg-white/30 dark:hover:bg-white/10 rounded-full transition-colors flex-shrink-0">
+                  <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                </button>
+                
+                <button v-else 
+                  @mousedown="startRecording" 
+                  @mouseup="stopRecording" 
+                  @mouseleave="stopRecording" 
+                  @touchstart="startRecording" 
+                  @touchend="stopRecording"
+                  class="p-2 transition-colors rounded-full flex-shrink-0" 
+                  :class="isRecording ? 'text-red-500 animate-pulse bg-red-100 dark:bg-red-900/30' : 'text-slate-500 hover:bg-white/30 dark:hover:bg-white/10'">
+                  <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                    <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </template>
