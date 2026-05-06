@@ -298,6 +298,73 @@ const createGroup = async () => {
   }
 }
 
+const getChatIdForSummary = (contact) => {
+  if (!contact || !authStore.user?.uid) return null
+  if (contact.isGroup) return contact.id // Kalau grup, ambil ID grup
+  const uids = [authStore.user.uid, contact.id].sort()
+  return `${uids[0]}_${uids[1]}`
+}
+
+// 2. Logika Voice Note (VN) yang hilang
+const isRecording = ref(false)
+const mediaRecorder = ref(null)
+const audioChunks = ref([])
+
+const startRecording = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    mediaRecorder.value = new MediaRecorder(stream)
+    audioChunks.value = []
+
+    mediaRecorder.value.ondataavailable = (e) => audioChunks.value.push(e.data)
+    
+    mediaRecorder.value.onstop = async () => {
+      const audioBlob = new Blob(audioChunks.value, { type: 'audio/webm' })
+      const file = new File([audioBlob], "vn.webm", { type: 'audio/webm' })
+      
+      const { $db } = useNuxtApp()
+      const chatId = getChatId()
+      if (!chatId) return
+
+      try {
+        const url = await uploadToCloudinary(file, 'video') 
+        
+        await addDoc(collection($db, 'chats', chatId, 'messages'), {
+          senderId: authStore.user.uid,
+          text: '',
+          mediaUrl: url,
+          type: 'audio',
+          status: 'sent',
+          timestamp: serverTimestamp()
+        })
+
+        await setDoc(doc($db, 'chats', chatId), {
+          lastMessage: '🎤 Voice Note',
+          lastSenderId: authStore.user.uid,
+          timestamp: serverTimestamp()
+        }, { merge: true })
+
+        await scrollToBottom()
+      } catch (err) {
+        console.error("Gagal kirim VN:", err)
+      }
+      
+      stream.getTracks().forEach(track => track.stop())
+    }
+
+    mediaRecorder.value.start()
+    isRecording.value = true
+  } catch (err) {
+    alert("Gagal akses mikrofon: " + err.message)
+  }
+}
+
+const stopRecording = () => {
+  if (mediaRecorder.value && isRecording.value) {
+    mediaRecorder.value.stop()
+    isRecording.value = false
+  }
+}
 const sendMessage = async () => {
   if (!newMessage.value.trim() && !selectedImageFile.value) return
   
