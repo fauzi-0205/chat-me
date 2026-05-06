@@ -1,8 +1,9 @@
 <script setup>
-import { computed, watch, ref, nextTick } from 'vue' // Tambah nextTick dan ref
+import { computed, watch, ref, nextTick } from 'vue'
 import { updateProfile, onAuthStateChanged } from 'firebase/auth'
 import { useAuthStore } from '~/stores/auth'
-import { collection, query, onSnapshot, doc, updateDoc, getDoc, arrayUnion, setDoc, addDoc, serverTimestamp, orderBy, writeBatch } from 'firebase/firestore'
+// Langkah 2A: Tambahkan deleteDoc di import
+import { collection, query, onSnapshot, doc, updateDoc, getDoc, arrayUnion, setDoc, addDoc, serverTimestamp, orderBy, writeBatch, deleteDoc } from 'firebase/firestore'
 
 definePageMeta({ layout: 'chat' })
 
@@ -30,12 +31,17 @@ const newMessage = ref('')
 const messages = ref([])
 const replyingTo = ref(null) 
 let chatUnsubscribe = null
-const chatSummaries = ref({}) // Untuk nyimpan Last Message di sidebar
+const chatSummaries = ref({})
 
 // Fitur Auto-Scroll & Preview Gambar
 const chatContainerRef = ref(null)
 const selectedImageFile = ref(null)
 const imagePreviewUrl = ref(null)
+
+// --- STATE GRUP (Langkah 4A) ---
+const showGroupModal = ref(false)
+const groupName = ref('')
+const selectedGroupMembers = ref([])
 
 // --- FUNGSI SCROLL OTOMATIS ---
 const scrollToBottom = async () => {
@@ -164,6 +170,13 @@ const handleFileUpload = async (event) => {
 
     const newPhotoUrl = cloudinaryData.secure_url
 
+    // --- LANGKAH 1: TAMBAHKAN UPDATE PROFILE AUTH ---
+    const { $auth } = useNuxtApp()
+    if ($auth.currentUser) {
+      await updateProfile($auth.currentUser, { photoURL: newPhotoUrl })
+    }
+    // ---------------------------------------------------
+
     const userRef = doc($db, "users", authStore.user.uid)
     await updateDoc(userRef, { photoURL: newPhotoUrl })
 
@@ -179,8 +192,12 @@ const handleFileUpload = async (event) => {
 }
 
 // --- LOGIKA CHAT REAL-TIME (DIPERBARUI) ---
+// Langkah 4B: Update getChatId() untuk mendukung Grup
 const getChatId = () => {
   if (!selectedChat.value || !authStore.user?.uid) return null
+  // Jika ini adalah Grup, gunakan ID Grup langsung sebagai ID Chat Room
+  if (selectedChat.value.isGroup) return selectedChat.value.id 
+  
   const uids = [authStore.user.uid, selectedChat.value.id].sort()
   return `${uids[0]}_${uids[1]}`
 }
@@ -197,14 +214,13 @@ watch(selectedChat, async (newChat) => {
   
   chatUnsubscribe = onSnapshot(q, async (snap) => {
     messages.value = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-    await scrollToBottom() // Langsung scroll ke bawah pas pesan masuk
+    await scrollToBottom()
 
     // Fitur: Menandai Pesan Terbaca (Blue Check)
     const batch = writeBatch($db)
     let hasUnread = false
     snap.docs.forEach(docSnap => {
       const data = docSnap.data()
-      // Jika pesan ini dari teman, dan statusnya belum 'read'
       if (data.senderId !== authStore.user.uid && data.status !== 'read') {
         batch.update(docSnap.ref, { status: 'read' })
         hasUnread = true
@@ -214,7 +230,6 @@ watch(selectedChat, async (newChat) => {
   })
 })
 
-// Menangkap Gambar untuk Preview (Belum Dikirim)
 const handleImageSelect = (e) => {
   const file = e.target.files[0]
   if (!file) return
@@ -233,7 +248,56 @@ const cancelImage = () => {
   imagePreviewUrl.value = null
 }
 
-// Fitur Kirim Pesan (Gabungan Teks, Gambar, Caption, Last Message)
+// Langkah 2B: Fungsi Hapus Pesan
+const deleteMessage = async (msgId) => {
+  if (!confirm("Yakin ingin menghapus pesan ini?")) return
+  const { $db } = useNuxtApp()
+  const chatId = getChatId()
+  try {
+    await deleteDoc(doc($db, 'chats', chatId, 'messages', msgId))
+  } catch (error) {
+    alert("Gagal menghapus pesan.")
+  }
+}
+
+// Langkah 4A: Fungsi Buat Grup
+const createGroup = async () => {
+  if (!groupName.value.trim() || selectedGroupMembers.value.length === 0) {
+    return alert("Nama grup dan anggota tidak boleh kosong!")
+  }
+
+  const { $db } = useNuxtApp()
+  const groupId = 'group_' + Date.now()
+  const members = [authStore.user.uid, ...selectedGroupMembers.value]
+
+  try {
+    // 1. Simpan profil Grup ke koleksi "users"
+    await setDoc(doc($db, "users", groupId), {
+      displayName: groupName.value,
+      isGroup: true,
+      members: members,
+      photoURL: 'https://cdn-icons-png.flaticon.com/512/615/615075.png'
+    })
+
+    // 2. Tambahkan ID Grup ini ke daftar kontak semua anggotanya
+    const batch = writeBatch($db)
+    members.forEach(memberId => {
+      batch.update(doc($db, "users", memberId), {
+        contacts: arrayUnion(groupId)
+      })
+    })
+    await batch.commit()
+
+    showGroupModal.value = false
+    groupName.value = ''
+    selectedGroupMembers.value = []
+    alert("Grup berhasil dibuat!")
+  } catch (error) {
+    console.error(error)
+    alert("Gagal membuat grup.")
+  }
+}
+
 const sendMessage = async () => {
   if (!newMessage.value.trim() && !selectedImageFile.value) return
   
@@ -248,13 +312,12 @@ const sendMessage = async () => {
     sender: replyingTo.value.senderId === authStore.user.uid ? 'Anda' : selectedChat.value.displayName 
   } : null
   
-  // Kosongkan form seketika biar responsif
   newMessage.value = ''
   replyingTo.value = null
   
   let mediaUrl = null
   const fileToUpload = selectedImageFile.value
-  cancelImage() // Tutup preview
+  cancelImage()
 
   if (fileToUpload) {
     try {
@@ -267,17 +330,15 @@ const sendMessage = async () => {
   }
 
   try {
-    // 1. Kirim Pesan ke Subcollection
     await addDoc(collection($db, 'chats', chatId, 'messages'), {
       senderId: authStore.user.uid,
       text: textToSend,
       mediaUrl: mediaUrl,
       replyTo: replyData,
-      status: 'sent', // Default centang 1/abu-abu
+      status: 'sent',
       timestamp: serverTimestamp()
     })
 
-    // 2. Update Last Message di Dokumen Chat Utama (Untuk Sidebar)
     await setDoc(doc($db, 'chats', chatId), {
       lastMessage: textToSend || '📷 Gambar',
       lastSenderId: authStore.user.uid,
@@ -302,10 +363,9 @@ const scrollToMsg = (id) => {
 
 // --- FITUR STORY (STATUS) ---
 const stories = ref([])
-const activeStory = ref(null) // Untuk nampilin story full screen
+const activeStory = ref(null)
 const storyFileInput = ref(null)
 
-// 1. Upload Story Baru
 const handleStoryUpload = async (event) => {
   const file = event.target.files[0]
   if (!file) return
@@ -321,7 +381,7 @@ const handleStoryUpload = async (event) => {
       userName: authStore.user.displayName,
       userPhoto: authStore.user.photoURL || '',
       mediaUrl: url,
-      timestamp: serverTimestamp() // Waktu upload
+      timestamp: serverTimestamp()
     })
     alert('Story berhasil diunggah!')
   } catch (error) {
@@ -333,7 +393,6 @@ const handleStoryUpload = async (event) => {
   }
 }
 
-// 2. Tampilkan Story (Otomatis tutup dalam 5 detik)
 let storyTimer = null
 const viewStory = (story) => {
   activeStory.value = story
@@ -347,7 +406,6 @@ const closeStory = () => {
   if (storyTimer) clearTimeout(storyTimer)
 }
 
-// Computed: Filter Story (Hanya milik kita & teman, dan belum 24 jam)
 const activeStories = computed(() => {
   const now = new Date()
   return stories.value.filter(s => {
@@ -371,24 +429,20 @@ onMounted(() => {
     if (user) {
       authStore.user = user
       
-      // Pantau Kontak Kita
       onSnapshot(doc($db, "users", user.uid), (s) => { 
         if (s.exists()) myContactsIds.value = s.data().contacts || [] 
       })
       
-      // Pantau Semua User
       onSnapshot(query(collection($db, "users")), (s) => {
         allUsers.value = s.docs.filter(d => d.id !== user.uid).map(d => ({ id: d.id, ...d.data() }))
       })
 
-      // Pantau LAST MESSAGE (Chat Terakhir) untuk Sidebar
       onSnapshot(query(collection($db, "chats")), (snap) => {
         const summaries = {}
         snap.forEach(doc => { summaries[doc.id] = doc.data() })
         chatSummaries.value = summaries
       })
 
-      // Pantau STORY Real-time
       onSnapshot(query(collection($db, "stories"), orderBy('timestamp', 'desc')), (snap) => {
         stories.value = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }))
       })
@@ -410,16 +464,13 @@ onMounted(() => {
         </button>
 
         <div class="flex flex-row md:flex-col items-center gap-6 order-2 md:order-3 md:mt-auto">
-          <!-- Toggle Tema -->
           <button @click="toggleTheme" class="p-2 text-[#54656f] dark:text-[#aebac1] hover:bg-white/30 dark:hover:bg-white/10 rounded-full transition-colors" title="Ganti Tema">
             <svg v-if="isDark" xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="4.22" x2="19.78" y2="5.64"></line></svg>
             <svg v-else xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
           </button>
-          <!-- Logout -->
           <button @click="handleLogout" class="p-2 text-[#54656f] dark:text-[#aebac1] hover:bg-white/30 dark:hover:bg-white/10 rounded-full transition-colors" title="Keluar">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
           </button>
-          <!-- Profil Avatar Kiri -->
           <div @click="openProfileModal" class="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold cursor-pointer shadow-sm overflow-hidden bg-blue-600 hover:ring-2 hover:ring-blue-400 transition-all">
             <img v-if="authStore.user?.photoURL" :src="authStore.user.photoURL" alt="Profile" class="w-full h-full object-cover" />
             <span v-else>{{ authStore.user?.displayName?.charAt(0).toUpperCase() || 'U' }}</span>
@@ -429,18 +480,22 @@ onMounted(() => {
 
       <!-- PANEL 2: Sidebar Daftar Kontak -->
       <div class="w-full md:w-[350px] flex-shrink-0 bg-white/50 dark:bg-black/30 backdrop-blur-md flex flex-col border-r border-white/20 dark:border-white/10 transition-colors duration-300" :class="{'hidden md:flex': selectedChat, 'flex': !selectedChat}">
+        <!-- Langkah 4C: Tambahkan Tombol Buat Grup -->
         <div class="h-[60px] px-4 flex items-center justify-between backdrop-blur-sm bg-white/70 dark:bg-white/10 border-b border-white/20 dark:border-white/10">
           <h2 class="font-bold text-xl">Chat</h2>
-          <button @click="showAddModal = true" class="p-2 hover:bg-white/30 dark:hover:bg-white/10 rounded-full transition-colors">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-          </button>
+          <div class="flex gap-2">
+            <button @click="showGroupModal = true" class="p-2 hover:bg-white/30 dark:hover:bg-white/10 rounded-full transition-colors" title="Buat Grup">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+            </button>
+            <button @click="showAddModal = true" class="p-2 hover:bg-white/30 dark:hover:bg-white/10 rounded-full transition-colors">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+          </div>
         </div>
         
         <div class="flex-1 overflow-y-auto custom-scrollbar">
           <!-- BARIS STORY (STATUS) -->
           <div class="px-4 py-3 border-b border-white/10 dark:border-white/5 bg-white/30 dark:bg-white/5 flex gap-4 overflow-x-auto custom-scrollbar">
-            
-            <!-- Tombol Tambah Story Saya -->
             <div class="flex flex-col items-center gap-1 cursor-pointer flex-shrink-0 relative" @click="() => storyFileInput.click()">
               <input type="file" accept="image/*" ref="storyFileInput" class="hidden" @change="handleStoryUpload" />
               <div class="w-12 h-12 rounded-full overflow-hidden bg-blue-600 relative ring-2 ring-transparent">
@@ -451,7 +506,6 @@ onMounted(() => {
               <span class="text-[11px] text-slate-500 font-medium">Status Saya</span>
             </div>
 
-            <!-- Looping Story Teman -->
             <div v-for="story in activeStories" :key="story.id" @click="viewStory(story)" class="flex flex-col items-center gap-1 cursor-pointer flex-shrink-0">
               <div class="w-12 h-12 rounded-full overflow-hidden bg-slate-300 ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-[#111b21]">
                 <img v-if="story.userPhoto" :src="story.userPhoto" class="w-full h-full object-cover" />
@@ -461,20 +515,22 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- Looping Daftar Teman -->
+          <!-- Looping Daftar Teman (Termasuk Grup) -->
           <div v-for="c in filteredContacts" :key="c.id" @click="selectedChat = c" class="flex items-center p-3 cursor-pointer hover:bg-white/30 dark:hover:bg-white/10 transition-colors" :class="selectedChat?.id === c.id ? 'bg-white/50 dark:bg-white/20' : ''">
-            <div class="w-12 h-12 rounded-full overflow-hidden bg-blue-500 flex-shrink-0">
+            <div class="w-12 h-12 rounded-full overflow-hidden flex-shrink-0" :class="c.isGroup ? 'bg-green-500' : 'bg-blue-500'">
               <img v-if="c.photoURL" :src="c.photoURL" class="w-full h-full object-cover" />
-              <span v-else class="flex h-full w-full items-center justify-center text-white font-bold">{{ c.displayName?.charAt(0) }}</span>
+              <span v-else class="flex h-full w-full items-center justify-center text-white font-bold">
+                <template v-if="c.isGroup">👥</template>
+                <template v-else>{{ c.displayName?.charAt(0) }}</template>
+              </span>
             </div>
             <div class="ml-3 flex-1 border-b border-white/10 dark:border-white/5 pb-3 min-w-0">
                <h4 class="font-medium truncate">{{ c.displayName }}</h4>
                
-               <!-- Tampilkan Last Message Real-time -->
                <p class="text-[13px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                 <span v-if="chatSummaries[[authStore.user.uid, c.id].sort().join('_')]">
-                   <span v-if="chatSummaries[[authStore.user.uid, c.id].sort().join('_')].lastSenderId === authStore.user.uid" class="mr-1">✓</span>
-                   {{ chatSummaries[[authStore.user.uid, c.id].sort().join('_')].lastMessage }}
+                 <span v-if="chatSummaries[getChatIdForSummary(c)]">
+                   <span v-if="chatSummaries[getChatIdForSummary(c)].lastSenderId === authStore.user.uid" class="mr-1">✓</span>
+                   {{ chatSummaries[getChatIdForSummary(c)].lastMessage }}
                  </span>
                  <span v-else>Belum ada obrolan</span>
                </p>
@@ -492,50 +548,59 @@ onMounted(() => {
 
         <template v-else>
           <div class="h-[60px] px-4 flex items-center bg-white/70 dark:bg-white/10 backdrop-blur-md border-b border-white/20 dark:border-white/10 z-10">
-             <!-- Tombol kembali (hanya mobile) -->
              <button @click="selectedChat = null" class="md:hidden mr-2 p-2 -ml-2 hover:bg-white/30 rounded-full text-slate-600 dark:text-slate-300">
                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
              </button>
-             <div class="w-10 h-10 rounded-full overflow-hidden bg-blue-500 flex-shrink-0">
+             <div class="w-10 h-10 rounded-full overflow-hidden flex-shrink-0" :class="selectedChat.isGroup ? 'bg-green-500' : 'bg-blue-500'">
                <img v-if="selectedChat.photoURL" :src="selectedChat.photoURL" class="w-full h-full object-cover" />
-               <span v-else class="flex h-full w-full items-center justify-center text-white font-bold">{{ selectedChat.displayName?.charAt(0) }}</span>
+               <span v-else class="flex h-full w-full items-center justify-center text-white font-bold">
+                 <template v-if="selectedChat.isGroup">👥</template>
+                 <template v-else>{{ selectedChat.displayName?.charAt(0) }}</template>
+               </span>
              </div>
              <h3 class="font-medium ml-3">{{ selectedChat.displayName }}</h3>
           </div>
 
-          <!-- Area Obrolan (Auto Scroll Ref) -->
-          <div ref="chatContainerRef" class="flex-1 overflow-y-auto p-4 flex flex-col gap-1 custom-scrollbar backdrop-blur-sm bg-white/30 dark:bg-white/5" style="background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); background-blend-mode: overlay; opacity: 0.9;">
-            <div v-for="m in messages" :id="`msg-${m.id}`" :key="m.id" @dblclick="replyingTo = m" class="flex w-full transition-all duration-500 p-1 rounded-lg" :class="m.senderId === authStore.user.uid ? 'justify-end' : 'justify-start'">
-              <div class="px-3 py-1.5 max-w-[80%] shadow-sm relative group cursor-pointer rounded-2xl" :class="m.senderId === authStore.user.uid ? 'bg-[#d9fdd3]/90 dark:bg-[#005c4b]/90 rounded-tr-none' : 'bg-white/90 dark:bg-[#202c33]/90 rounded-tl-none'">
-                
-                <!-- Reply Section -->
-                <div v-if="m.replyTo" @click="scrollToMsg(m.replyTo.id)" class="mb-1 p-2 bg-black/5 dark:bg-white/5 border-l-4 border-blue-500 rounded text-[11px] opacity-80 cursor-pointer hover:opacity-100">
-                  <p class="font-bold text-blue-500">{{ m.replyTo.sender }}</p>
-                  <p class="truncate">{{ m.replyTo.text || '📷 Gambar' }}</p>
-                </div>
-                
-                <!-- Media -->
-                <template v-if="m.mediaUrl">
-                  <audio v-if="m.type === 'audio'" :src="m.mediaUrl" controls class="max-w-[220px] h-10 mb-1"></audio>
-                  <img v-else :src="m.mediaUrl" class="rounded-lg max-h-64 mb-1 block mx-auto" @load="scrollToBottom" />
-                </template>
-                
-                <!-- Teks -->
-                <p v-if="m.text" class="text-sm pr-14 whitespace-pre-wrap">{{ m.text }}</p>
-                
-                <!-- Waktu & Centang -->
-                <div class="text-[9px] opacity-60 absolute right-2 bottom-1 flex items-center gap-1">
-                  <span>{{ m.timestamp ? new Date(m.timestamp.toDate()).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '...' }}</span>
-                  <span v-if="m.senderId === authStore.user.uid">
-                    <svg v-if="m.status === 'read'" class="w-3 h-3 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L7 17l-5-5 M22 6l-5 5"/></svg>
-                    <svg v-else class="w-3 h-3 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
-                  </span>
+          <!-- Area Obrolan (Auto Scroll Ref) - Langkah 3: pb-28 + min-h-full + justify-end -->
+          <div ref="chatContainerRef" class="flex-1 overflow-y-auto p-4 custom-scrollbar backdrop-blur-sm bg-white/30 dark:bg-white/5 pb-28" style="background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); background-blend-mode: overlay; opacity: 0.9;">
+            <div class="flex flex-col gap-1 min-h-full justify-end">
+              <div v-for="m in messages" :id="`msg-${m.id}`" :key="m.id" @dblclick="replyingTo = m" class="flex w-full transition-all duration-500 p-1 rounded-lg mt-auto" :class="m.senderId === authStore.user.uid ? 'justify-end' : 'justify-start'">
+                <div class="px-3 py-1.5 max-w-[80%] shadow-sm relative group cursor-pointer rounded-2xl" :class="m.senderId === authStore.user.uid ? 'bg-[#d9fdd3]/90 dark:bg-[#005c4b]/90 rounded-tr-none' : 'bg-white/90 dark:bg-[#202c33]/90 rounded-tl-none'">
+                  
+                  <!-- Reply Section -->
+                  <div v-if="m.replyTo" @click="scrollToMsg(m.replyTo.id)" class="mb-1 p-2 bg-black/5 dark:bg-white/5 border-l-4 border-blue-500 rounded text-[11px] opacity-80 cursor-pointer hover:opacity-100">
+                    <p class="font-bold text-blue-500">{{ m.replyTo.sender }}</p>
+                    <p class="truncate">{{ m.replyTo.text || '📷 Gambar' }}</p>
+                  </div>
+                  
+                  <!-- Media -->
+                  <template v-if="m.mediaUrl">
+                    <audio v-if="m.type === 'audio'" :src="m.mediaUrl" controls class="max-w-[220px] h-10 mb-1"></audio>
+                    <img v-else :src="m.mediaUrl" class="rounded-lg max-h-64 mb-1 block mx-auto" @load="scrollToBottom" />
+                  </template>
+                  
+                  <!-- Teks -->
+                  <p v-if="m.text" class="text-sm pr-14 whitespace-pre-wrap">{{ m.text }}</p>
+                  
+                  <!-- Waktu & Centang & Tombol Hapus (Langkah 2C) -->
+                  <div class="text-[9px] opacity-60 absolute right-2 bottom-1 flex items-center gap-1">
+                    <span>{{ m.timestamp ? new Date(m.timestamp.toDate()).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '...' }}</span>
+                    <span v-if="m.senderId === authStore.user.uid">
+                      <svg v-if="m.status === 'read'" class="w-3 h-3 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L7 17l-5-5 M22 6l-5 5"/></svg>
+                      <svg v-else class="w-3 h-3 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+                    </span>
+                  </div>
+
+                  <!-- Tombol Hapus (Muncul saat di-hover) -->
+                  <button v-if="m.senderId === authStore.user.uid" @click.stop="deleteMessage(m.id)" class="absolute -left-8 top-1/2 -translate-y-1/2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  </button>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- ====== INPUT AREA STICKY (TIDAK TERGULUNG) ====== -->
+          <!-- ====== INPUT AREA STICKY ====== -->
           <div class="sticky bottom-0 z-10 w-full bg-white/40 dark:bg-black/30 backdrop-blur-md border-t border-white/10 dark:border-white/10 pb-safe">
             <div class="mx-auto max-w-2xl px-3 md:px-4 pt-2 pb-3">
               
@@ -561,7 +626,6 @@ onMounted(() => {
                   <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
                 </label>
                 <input v-model="newMessage" @keyup.enter="sendMessage()" type="text" placeholder="Ketik pesan..." class="flex-1 bg-transparent px-2 py-2.5 outline-none text-sm placeholder-slate-400 dark:placeholder-gray-500 min-w-0" />
-                <!-- Tombol Kirim atau Mic -->
                 <button v-if="newMessage.trim() || imagePreviewUrl" @click="sendMessage()" class="text-blue-500 p-2 hover:bg-white/30 dark:hover:bg-white/10 rounded-full transition-colors flex-shrink-0">
                   <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
                 </button>
@@ -671,17 +735,40 @@ onMounted(() => {
         </div>
       </div>
 
+      <!-- Langkah 4D: Modal Buat Grup -->
+      <div v-if="showGroupModal" class="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm transition-opacity">
+        <div class="bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg w-full max-w-md rounded-2xl shadow-2xl p-6 border border-white/30 dark:border-white/10 mx-4">
+          <div class="flex justify-between items-center mb-6">
+            <h3 class="text-xl font-bold">Buat Grup Baru</h3>
+            <button @click="showGroupModal = false" class="hover:text-red-500"><svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+          </div>
+          <input v-model="groupName" type="text" placeholder="Nama Grup..." class="w-full px-4 py-3 bg-white/60 dark:bg-white/10 backdrop-blur-sm border rounded-lg focus:outline-none focus:border-blue-500 mb-4" />
+          
+          <h4 class="font-medium mb-2 text-sm">Pilih Anggota:</h4>
+          <div class="max-h-40 overflow-y-auto mb-4 custom-scrollbar bg-white/40 dark:bg-black/20 p-2 rounded-lg">
+            <label v-for="c in filteredContacts" :key="c.id" class="flex items-center gap-3 p-2 hover:bg-white/50 cursor-pointer rounded">
+              <input type="checkbox" :value="c.id" v-model="selectedGroupMembers" class="w-4 h-4 text-blue-600 rounded" />
+              <div class="w-8 h-8 rounded-full bg-blue-500 overflow-hidden">
+                <img v-if="c.photoURL" :src="c.photoURL" class="w-full h-full object-cover" />
+                <span v-else class="text-white text-xs flex items-center justify-center h-full">{{ c.displayName?.charAt(0) }}</span>
+              </div>
+              <span class="text-sm font-medium">{{ c.displayName }}</span>
+            </label>
+          </div>
+
+          <button @click="createGroup" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors">Buat Grup</button>
+        </div>
+      </div>
+
       <!-- MODAL VIEWER STORY (STATUS) -->
       <div v-if="activeStory" class="fixed inset-0 z-[100] bg-black/95 flex flex-col items-center justify-center backdrop-blur-sm transition-opacity">
         
-        <!-- Progress Bar -->
         <div class="absolute top-4 left-4 right-4 flex gap-1 z-10">
           <div class="h-1 bg-white/30 rounded-full flex-1 overflow-hidden">
             <div class="h-full bg-white animate-[storyProgress_5s_linear_forward]"></div>
           </div>
         </div>
 
-        <!-- Header Story -->
         <div class="absolute top-8 left-4 right-4 flex justify-between items-center z-10">
           <div class="flex items-center gap-2">
             <img v-if="activeStory.userPhoto" :src="activeStory.userPhoto" class="w-10 h-10 rounded-full border border-white/50" />
@@ -693,7 +780,6 @@ onMounted(() => {
           <button @click="closeStory" class="text-white p-2 hover:bg-white/20 rounded-full"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg></button>
         </div>
 
-        <!-- Gambar Story -->
         <img :src="activeStory.mediaUrl" class="max-w-full max-h-screen object-contain" />
       </div>
     </div>
