@@ -500,6 +500,12 @@ const activeStories = computed(() => {
   })
 })
 
+// Computed untuk story user sendiri
+const myStory = computed(() => activeStories.value.find(s => s.userId === authStore.user.uid))
+
+// Computed untuk story kontak lain
+const contactStories = computed(() => activeStories.value.filter(s => s.userId !== authStore.user.uid))
+
 const handleLogout = async () => {
   await authStore.logout()
 }
@@ -565,28 +571,42 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- STORY BAR -->
+        <!-- STORY BAR (DIPERBAIKI: Tidak ada duplikasi) -->
         <div class="px-5 py-3 border-b border-gray-50 bg-white/70 flex gap-4 overflow-x-auto custom-scrollbar">
-          <div class="flex flex-col items-center gap-1 cursor-pointer flex-shrink-0 relative" @click="() => storyFileInput.click()">
-            <input type="file" accept="image/*" ref="storyFileInput" class="hidden" @change="handleStoryUpload" />
-            <div class="w-12 h-12 rounded-full overflow-hidden bg-blue-600 relative ring-2 ring-blue-100">
-              <img v-if="authStore.user?.photoURL" :src="authStore.user.photoURL" class="w-full h-full object-cover opacity-70" />
-              <span v-else class="flex h-full w-full items-center justify-center text-white font-bold">{{ authStore.user?.displayName?.charAt(0) }}</span>
-              <div class="absolute inset-0 flex items-center justify-center bg-black/20 text-white font-bold text-xl">+</div>
+          
+          <!-- Story Saya Sendiri (Kondisional) -->
+          <template v-if="myStory">
+            <div @click="viewStory(myStory)" class="flex flex-col items-center gap-1 cursor-pointer flex-shrink-0">
+              <div class="w-12 h-12 rounded-full overflow-hidden bg-blue-600 ring-2 ring-blue-500 ring-offset-2">
+                <img v-if="authStore.user?.photoURL" :src="authStore.user.photoURL" class="w-full h-full object-cover" />
+                <span v-else class="flex h-full w-full items-center justify-center text-white font-bold">{{ authStore.user?.displayName?.charAt(0) }}</span>
+              </div>
+              <span class="text-[11px] text-gray-500 font-medium">Anda</span>
             </div>
-            <span class="text-[11px] text-gray-500 font-medium">Status Saya</span>
-          </div>
+          </template>
+          <template v-else>
+            <div class="flex flex-col items-center gap-1 cursor-pointer flex-shrink-0 relative" @click="() => storyFileInput.click()">
+              <input type="file" accept="image/*" ref="storyFileInput" class="hidden" @change="handleStoryUpload" />
+              <div class="w-12 h-12 rounded-full overflow-hidden bg-blue-600 relative ring-2 ring-blue-100">
+                <img v-if="authStore.user?.photoURL" :src="authStore.user.photoURL" class="w-full h-full object-cover opacity-70" />
+                <span v-else class="flex h-full w-full items-center justify-center text-white font-bold">{{ authStore.user?.displayName?.charAt(0) }}</span>
+                <div class="absolute inset-0 flex items-center justify-center bg-black/20 text-white font-bold text-xl">+</div>
+              </div>
+              <span class="text-[11px] text-gray-500 font-medium">Status Saya</span>
+            </div>
+          </template>
 
-          <div v-for="story in activeStories" :key="story.id" @click="viewStory(story)" class="flex flex-col items-center gap-1 cursor-pointer flex-shrink-0">
+          <!-- Story Kontak (Tanpa User Sendiri) -->
+          <div v-for="story in contactStories" :key="story.id" @click="viewStory(story)" class="flex flex-col items-center gap-1 cursor-pointer flex-shrink-0">
             <div class="w-12 h-12 rounded-full overflow-hidden bg-gray-300 ring-2 ring-blue-500 ring-offset-2">
               <img v-if="story.userPhoto" :src="story.userPhoto" class="w-full h-full object-cover" />
               <span v-else class="flex h-full w-full items-center justify-center text-white bg-blue-500 font-bold">{{ story.userName?.charAt(0) }}</span>
             </div>
-            <span class="text-[11px] text-gray-500 font-medium w-12 truncate text-center">{{ story.userId === authStore.user.uid ? 'Anda' : story.userName }}</span>
+            <span class="text-[11px] text-gray-500 font-medium w-12 truncate text-center">{{ story.userName }}</span>
           </div>
         </div>
 
-        <!-- CARD GRID KONTAK -->
+        <!-- CARD GRID KONTAK (DIPERBAIKI: Hilangkan dot online palsu) -->
         <div class="flex-1 overflow-y-auto p-4 custom-scrollbar">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div v-for="c in filteredContacts" :key="c.id" 
@@ -600,8 +620,8 @@ onMounted(() => {
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
               </button>
 
-              <!-- Avatar dengan status dot -->
-              <div class="relative mb-3">
+              <!-- Avatar TANPA status dot -->
+              <div class="mb-3">
                 <div class="w-16 h-16 rounded-full overflow-hidden shadow-sm" :class="c.isGroup ? 'bg-green-500' : 'bg-blue-500'">
                   <img v-if="c.photoURL" :src="c.photoURL" class="w-full h-full object-cover" />
                   <span v-else class="flex h-full w-full items-center justify-center text-white font-bold text-xl">
@@ -609,7 +629,6 @@ onMounted(() => {
                     <template v-else>{{ c.displayName?.charAt(0) }}</template>
                   </span>
                 </div>
-                <span class="absolute bottom-0 right-0 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></span>
               </div>
 
               <!-- Nama -->
@@ -634,7 +653,7 @@ onMounted(() => {
       </div>
 
       <!-- PANEL KANAN: CHAT AREA -->
-      <div class="flex-1 flex flex-col bg-white">
+      <div class="flex-1 flex flex-col bg-white min-w-0">
         <!-- Placeholder jika tidak ada chat yang dipilih -->
         <div v-if="!selectedChat" class="flex-1 flex flex-col items-center justify-center bg-gray-50">
           <div class="text-center px-6">
@@ -647,24 +666,22 @@ onMounted(() => {
         </div>
 
         <template v-else>
-          <!-- HEADER MINIMAL CHAT -->
+          <!-- HEADER MINIMAL CHAT (DIPERBAIKI: Status kondisional) -->
           <div class="flex items-center gap-3 px-6 py-4 bg-white border-b border-gray-100 shadow-sm">
             <button @click="selectedChat = null" class="md:hidden p-2 -ml-2 hover:bg-gray-100 rounded-full text-gray-500">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
             </button>
-            <div class="relative">
-              <div class="w-10 h-10 rounded-full overflow-hidden" :class="selectedChat.isGroup ? 'bg-green-500' : 'bg-blue-500'">
-                <img v-if="selectedChat.photoURL" :src="selectedChat.photoURL" class="w-full h-full object-cover" />
-                <span v-else class="flex h-full w-full items-center justify-center text-white font-bold">
-                  <template v-if="selectedChat.isGroup">👥</template>
-                  <template v-else>{{ selectedChat.displayName?.charAt(0) }}</template>
-                </span>
-              </div>
-              <span class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>
+            <div class="w-10 h-10 rounded-full overflow-hidden flex-shrink-0" :class="selectedChat.isGroup ? 'bg-green-500' : 'bg-blue-500'">
+              <img v-if="selectedChat.photoURL" :src="selectedChat.photoURL" class="w-full h-full object-cover" />
+              <span v-else class="flex h-full w-full items-center justify-center text-white font-bold">
+                <template v-if="selectedChat.isGroup">👥</template>
+                <template v-else>{{ selectedChat.displayName?.charAt(0) }}</template>
+              </span>
             </div>
             <div>
               <h3 class="font-medium text-gray-800 leading-tight">{{ selectedChat.displayName }}</h3>
-              <span class="text-xs text-green-600">Online</span>
+              <span v-if="selectedChat.isGroup" class="text-xs text-blue-500">👥 Grup</span>
+              <span v-else class="text-xs text-gray-400">Offline</span>
             </div>
           </div>
 
@@ -707,10 +724,10 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- INPUT AREA: FLOATING PILL -->
-          <div class="flex-shrink-0 bg-white border-t border-gray-100 px-6 py-4">
+          <!-- INPUT AREA: FLOATING PILL (DIPERBAIKI: flex-shrink-0 + min-w-0) -->
+          <div class="flex-shrink-0 bg-white border-t border-gray-100 px-4 md:px-6 py-4 relative">
             <!-- Preview Gambar -->
-            <div v-if="imagePreviewUrl" class="absolute bottom-20 left-1/2 -translate-x-1/2 w-auto max-w-md p-3 bg-white shadow-xl rounded-xl border border-gray-200 z-20">
+            <div v-if="imagePreviewUrl" class="absolute bottom-24 left-1/2 -translate-x-1/2 w-auto max-w-md p-3 bg-white shadow-xl rounded-xl border border-gray-200 z-20">
               <div class="relative">
                 <img :src="imagePreviewUrl" class="h-32 object-contain rounded-lg mx-auto" />
                 <button @click="cancelImage" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg></button>
@@ -721,19 +738,19 @@ onMounted(() => {
             <!-- Reply indicator -->
             <div v-if="replyingTo" class="mb-2 p-2 bg-blue-50 border-l-4 border-blue-500 flex justify-between rounded-lg">
               <div class="text-xs truncate"><p class="font-bold text-blue-600">Balas {{ replyingTo.senderId === authStore.user.uid ? 'Anda' : selectedChat.displayName }}</p><p class="truncate text-gray-600">{{ replyingTo.text || '📷 Gambar' }}</p></div>
-              <button @click="replyingTo = null" class="text-gray-400 hover:text-gray-600"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg></button>
+              <button @click="replyingTo = null" class="text-gray-400 hover:text-gray-600 flex-shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg></button>
             </div>
 
-            <!-- Floating pill input -->
-            <div class="flex items-center gap-2 bg-white rounded-full shadow-lg border border-gray-200 p-1.5 pl-5">
+            <!-- Floating pill input (DIPERBAIKI) -->
+            <div class="flex items-center gap-1.5 bg-white rounded-full shadow-lg border border-gray-200 p-1.5 pl-4 min-w-0">
               <label class="cursor-pointer text-gray-400 hover:text-blue-500 transition-colors flex-shrink-0">
                 <input type="file" accept="image/*" class="hidden" @change="handleImageSelect" />
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                <svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
               </label>
               <input v-model="newMessage" @keyup.enter="sendMessage()" type="text" placeholder="Ketik pesan..." class="flex-1 bg-transparent px-2 py-2 outline-none text-sm text-gray-800 placeholder-gray-400 min-w-0" />
               
               <button v-if="newMessage.trim() || imagePreviewUrl" @click="sendMessage()" class="text-blue-500 p-2 hover:bg-blue-50 rounded-full transition-colors flex-shrink-0">
-                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                <svg class="w-5 h-5 md:w-6 md:h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
               </button>
               
               <button v-else 
@@ -744,7 +761,7 @@ onMounted(() => {
                 @touchend="stopRecording"
                 class="p-2 transition-colors rounded-full flex-shrink-0" 
                 :class="isRecording ? 'text-red-500 animate-pulse bg-red-50' : 'text-gray-400 hover:bg-gray-100'">
-                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                <svg class="w-5 h-5 md:w-6 md:h-6" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
                   <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
                 </svg>

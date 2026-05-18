@@ -53,9 +53,6 @@ const handleRegister = async () => {
               <img src="https://i.pravatar.cc/32?img=47" class="w-8 h-8 rounded-2xl ring-4 ring-slate-900" alt="">
               <img src="https://i.pravatar.cc/32?img=32" class="w-8 h-8 rounded-2xl ring-4 ring-slate-900" alt="">
             </div>
-            <div>
-              <p class="text-sm font-medium">Dipercaya oleh 12.840+ tim profesional</p>
-            </div>
           </div>
         </div>
 
